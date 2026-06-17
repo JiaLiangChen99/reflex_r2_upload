@@ -1,6 +1,8 @@
 # reflex-r2-upload
 
-**Language:** **English** · [中文](README.zh-CN.md)
+**Language:** **English** · [中文](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/README.zh-CN.md)
+
+**Source & docs:** [GitHub](https://github.com/JiaLiangChen99/reflex_r2_upload) · [Documentation](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/en/README.md) · [中文文档](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/README.md)
 
 A Reflex custom component for **browser-direct uploads** to **Cloudflare R2** (presigned PUT). Large files never pass through your Python backend.
 
@@ -166,14 +168,16 @@ if r2.is_public_access_configured():
 
 ## Documentation
 
-**[📖 Docs (English)](docs/en/README.md)** · **[📖 文档（中文）](docs/README.md)** · **[README 中文](README.zh-CN.md)**
+Full docs live on GitHub (not bundled on PyPI):
+
+**[📖 Docs (English)](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/en/README.md)** · **[📖 文档（中文）](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/README.md)** · **[README 中文](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/README.zh-CN.md)**
 
 | English | 中文 |
 |---------|------|
-| [Configuration](docs/en/configuration.md) | [配置](docs/zh/configuration.md) |
-| [Bridge Payload](docs/en/bridge-payload.md) | [Bridge Payload](docs/zh/bridge-payload.md) |
-| [Private bucket](docs/en/private-bucket.md) | [私有桶](docs/zh/private-bucket.md) |
-| [Architecture](docs/en/architecture.md) | [架构与实现](docs/zh/architecture.md) |
+| [Configuration](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/en/configuration.md) | [配置](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/zh/configuration.md) |
+| [Bridge Payload](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/en/bridge-payload.md) | [Bridge Payload](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/zh/bridge-payload.md) |
+| [Private bucket](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/en/private-bucket.md) | [私有桶](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/zh/private-bucket.md) |
+| [Architecture](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/en/architecture.md) | [架构与实现](https://github.com/JiaLiangChen99/reflex_r2_upload/blob/main/docs/zh/architecture.md) |
 
 ---
 

@@ -15,6 +15,13 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.urls]
+Homepage = "https://github.com/JiaLiangChen99/reflex_r2_upload"
+Documentation = "https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/en/README.md"
+Repository = "https://github.com/JiaLiangChen99/reflex_r2_upload"
+Issues = "https://github.com/JiaLiangChen99/reflex_r2_upload/issues"
+Changelog = "https://github.com/JiaLiangChen99/reflex_r2_upload/releases"
+
 [project.optional-dependencies]
 dev = [
     "pytest",

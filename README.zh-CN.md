@@ -2,6 +2,8 @@
 
 **Language:** [English](README.md) · **中文**
 
+**源码与文档：** [GitHub](https://github.com/JiaLiangChen99/reflex_r2_upload) · [文档首页](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/README.md) · [Documentation (English)](https://github.com/JiaLiangChen99/reflex_r2_upload/tree/main/docs/en/README.md)
+
 Reflex 自定义组件：在 Reflex 应用里把文件 **直传** 到 **Cloudflare R2**（presigned PUT），大文件不经 Python 后端中转。
 
 **能做什么**
@@ -166,7 +168,7 @@ if r2.is_public_access_configured():
 
 ## 文档
 
-**[📖 文档首页](docs/README.md)** · **[📖 Documentation (English)](docs/en/README.md)**
+**[📖 文档首页](docs/README.md)** · **[📖 Documentation (English)](docs/en/README.md)** · **[GitHub 仓库](https://github.com/JiaLiangChen99/reflex_r2_upload)**
 
 | 中文 | English |
 |------|---------|
