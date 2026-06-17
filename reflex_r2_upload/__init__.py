@@ -1,6 +1,6 @@
 """reflex-r2-upload: browser-direct Cloudflare R2 uploads for Reflex."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from reflex_r2_upload.access import (
     is_public_access_configured,
