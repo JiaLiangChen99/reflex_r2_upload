@@ -2,27 +2,31 @@
 
 import json
 
+import pytest
+
 import reflex_r2_upload as r2
 from reflex_r2_demo.upload_handlers import (
     describe_upload,
     parse_upload_or_error,
     signed_url_for_storage,
 )
+from reflex_r2_upload.payload import file_bridge_payload
+
+
+@pytest.fixture(autouse=True)
+def bridge_signing_secret(monkeypatch):
+    monkeypatch.setenv("REFLEX_R2_UPLOAD_SECRET", "unit-test-bridge-secret")
 
 
 def test_parse_upload_or_error_success():
     payload = json.dumps(
-        {
-            "version": 1,
-            "error": False,
-            "ok": True,
-            "keyPrefix": "demo/x",
-            "storagePath": "demo/x/a.glb",
-            "originalFilename": "a.glb",
-            "fileSizeBytes": 1,
-            "contentType": "model/gltf-binary",
-            "publicUrl": None,
-        }
+        file_bridge_payload(
+            key_prefix="demo/x",
+            storage_path="demo/x/a.glb",
+            original_filename="a.glb",
+            file_size_bytes=1,
+            content_type="model/gltf-binary",
+        )
     )
     result, err, code = parse_upload_or_error(payload)
     assert result is not None
@@ -32,17 +36,13 @@ def test_parse_upload_or_error_success():
 
 def test_describe_upload_private():
     payload = json.dumps(
-        {
-            "version": 1,
-            "error": False,
-            "ok": True,
-            "keyPrefix": "p",
-            "storagePath": "p/f.glb",
-            "originalFilename": "f.glb",
-            "fileSizeBytes": 1,
-            "contentType": "model/gltf-binary",
-            "publicUrl": None,
-        }
+        file_bridge_payload(
+            key_prefix="p",
+            storage_path="p/f.glb",
+            original_filename="f.glb",
+            file_size_bytes=1,
+            content_type="model/gltf-binary",
+        )
     )
     result, _, _ = parse_upload_or_error(payload)
     text = describe_upload(result)

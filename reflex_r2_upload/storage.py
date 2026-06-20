@@ -15,6 +15,7 @@ from reflex_r2_upload.config import (
     is_public_access_configured,
     presign_expires,
     public_base_url,
+    resolve_get_expires,
     secret_access_key,
 )
 
@@ -72,21 +73,33 @@ def _bucket_name() -> str:
     return bucket_name()
 
 
-def object_exists(storage_path: str) -> bool:
+def _head_object(storage_path: str) -> dict[str, Any] | None:
+    """Return S3 head_object metadata, or ``None`` when the key is missing."""
     key = storage_path.lstrip("/")
     if not key:
-        return False
+        return None
 
     try:
         from botocore.exceptions import ClientError
 
-        _r2_client().head_object(Bucket=_bucket_name(), Key=key)
-        return True
+        return _r2_client().head_object(Bucket=_bucket_name(), Key=key)
     except ClientError as error:
         code = error.response.get("Error", {}).get("Code", "")
         if code in {"404", "NoSuchKey", "NotFound"}:
-            return False
+            return None
         raise
+
+
+def object_exists(storage_path: str) -> bool:
+    return _head_object(storage_path) is not None
+
+
+def object_content_length(storage_path: str) -> int | None:
+    """Return object size in bytes, or ``None`` when the key is missing."""
+    metadata = _head_object(storage_path)
+    if metadata is None:
+        return None
+    return int(metadata["ContentLength"])
 
 
 def create_presigned_put_url(
@@ -94,15 +107,19 @@ def create_presigned_put_url(
     content_type: str = DEFAULT_CONTENT_TYPE,
     *,
     expires_in: int | None = None,
+    content_length: int | None = None,
 ) -> str:
     key = storage_path.lstrip("/")
+    params: dict[str, Any] = {
+        "Bucket": _bucket_name(),
+        "Key": key,
+        "ContentType": content_type,
+    }
+    if content_length is not None and content_length > 0:
+        params["ContentLength"] = int(content_length)
     return _r2_client().generate_presigned_url(
         "put_object",
-        Params={
-            "Bucket": _bucket_name(),
-            "Key": key,
-            "ContentType": content_type,
-        },
+        Params=params,
         ExpiresIn=expires_in or presign_expires(),
     )
 
@@ -114,8 +131,9 @@ def create_presigned_get_url(
 ) -> str:
     """Create a time-limited read URL for a private bucket object."""
     key = storage_path.lstrip("/")
+    ttl = resolve_get_expires(expires_in)
     return _r2_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": _bucket_name(), "Key": key},
-        ExpiresIn=expires_in or get_expires(),
+        ExpiresIn=ttl,
     )

@@ -1,6 +1,6 @@
 # reflex-r2-upload Documentation
 
-**Language:** [中文](../docs/README.md) · **English**
+**Language:** [中文](../README.md) · **English**
 
 [Project README (English)](../README.md) · [README 中文](../README.zh-CN.md)
 
@@ -10,7 +10,8 @@
 
 | Document | Description |
 |----------|-------------|
-| [Configuration](configuration.md) | Environment variables & `R2Config` |
+| [Configuration](configuration.md) | Environment variables, `R2Config`, `wrap_app` |
+| [Security](security.md) | Upload tokens, bridge signatures, production |
 | [Bridge Payload](bridge-payload.md) | Upload callback JSON schema (v1) |
 | [Private bucket](private-bucket.md) | Read access without a public CDN |
 | [Architecture](architecture.md) | Design, data flow, reserved routes |
@@ -22,6 +23,11 @@
 1. [Configuration](configuration.md) — R2 credentials  
 2. [Project README](../../README.md) — install & `wrap_app`  
 3. [Bridge Payload](bridge-payload.md) — parse `on_success`  
+
+**Production**
+
+1. [Security](security.md) — per-user prefix, guards, read auth  
+2. [Configuration](configuration.md) — rate limits, size caps, verbose config  
 
 **Public CDN vs private bucket**
 

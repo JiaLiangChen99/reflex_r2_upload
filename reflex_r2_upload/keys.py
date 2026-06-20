@@ -24,8 +24,10 @@ def normalize_prefix(key_prefix: str) -> str:
 
 
 def is_allowed_extension(filename: str, allowed: list[str] | None) -> bool:
-    if not allowed:
+    if allowed is None:
         return True
+    if not allowed:
+        return False
     suffix = Path(filename).suffix.lower()
     normalized = {ext.lower() if ext.startswith(".") else f".{ext.lower()}" for ext in allowed}
     return suffix in normalized

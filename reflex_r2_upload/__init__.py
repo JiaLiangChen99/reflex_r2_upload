@@ -6,7 +6,19 @@ from reflex_r2_upload.access import (
     is_public_access_configured,
     signed_read_url,
 )
-from reflex_r2_upload.config import R2Config, configure_r2
+from reflex_r2_upload.auth import (
+    PresignGuard,
+    issue_upload_token,
+    make_allowed_key_prefixes_guard,
+    make_user_key_prefix_guard,
+    user_key_prefix,
+)
+from reflex_r2_upload.config import (
+    R2Config,
+    configure_allowed_key_prefixes,
+    configure_r2,
+    configure_upload_auth,
+)
 from reflex_r2_upload.payload import (
     BRIDGE_PAYLOAD_VERSION,
     UploadErrorCode,
@@ -52,18 +64,25 @@ __all__ = [
     "UploadSuccessSinglePayload",
     "UploadedFile",
     "configure_r2",
+    "configure_allowed_key_prefixes",
+    "configure_upload_auth",
     "create_presigned_get_url",
     "create_presigned_put_url",
     "create_upload_api",
     "error_bridge_payload",
     "file_bridge_payload",
     "is_public_access_configured",
+    "issue_upload_token",
+    "make_allowed_key_prefixes_guard",
+    "make_user_key_prefix_guard",
     "parse_upload_payload",
+    "PresignGuard",
     "public_url",
     "public_url_or_none",
     "r2_upload_provider",
     "signed_read_url",
     "success_bridge_payload",
     "upload_zone",
+    "user_key_prefix",
     "wrap_app",
 ]

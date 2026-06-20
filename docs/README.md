@@ -10,7 +10,8 @@
 
 | 文档 | 说明 |
 |------|------|
-| [配置](zh/configuration.md) | 环境变量与 `R2Config` |
+| [配置](zh/configuration.md) | 环境变量、`R2Config` 与 `wrap_app` 参数 |
+| [安全](zh/security.md) | upload token、bridge 签名、生产部署 |
 | [Bridge Payload](zh/bridge-payload.md) | 上传回调 JSON 契约（v1） |
 | [私有桶](zh/private-bucket.md) | 无 CDN 时的读访问 |
 | [架构与实现](zh/architecture.md) | 原理、数据流、保留路由 |
@@ -20,8 +21,13 @@
 **首次接入**
 
 1. [配置](zh/configuration.md) — 提供 R2 凭证  
-2. 根目录 [README](../README.md) — 安装与 `wrap_app` 用法  
+2. 根目录 [README](../README.zh-CN.md) — 安装与 `wrap_app` 用法  
 3. [Bridge Payload](zh/bridge-payload.md) — 解析 `on_success` 回调  
+
+**生产部署**
+
+1. [安全](zh/security.md) — 用户 prefix 绑定、guard、读权限  
+2. [配置](zh/configuration.md) — 限流、大小上限、verbose config  
 
 **公开 CDN vs 私有桶**
 

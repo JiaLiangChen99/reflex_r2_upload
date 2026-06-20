@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from reflex_r2_upload.auth import sign_bridge_file_payload
 from reflex_r2_upload.storage import public_url_or_none
 
 BRIDGE_PAYLOAD_VERSION = 1
@@ -17,6 +18,8 @@ class UploadErrorCode:
     EXTENSION_NOT_ALLOWED = "EXTENSION_NOT_ALLOWED"
     STORAGE_PUT_FAILED = "STORAGE_PUT_FAILED"
     CORS_BLOCKED = "CORS_BLOCKED"
+    UNAUTHORIZED = "UNAUTHORIZED"
+    INVALID_SIGNATURE = "INVALID_SIGNATURE"
 
 
 def file_bridge_payload(
@@ -28,7 +31,8 @@ def file_bridge_payload(
     content_type: str,
 ) -> dict:
     """Build a version-1 per-file success object for the Reflex bridge."""
-    return {
+    public_url = public_url_or_none(storage_path)
+    body = {
         "version": BRIDGE_PAYLOAD_VERSION,
         "error": False,
         "ok": True,
@@ -37,8 +41,17 @@ def file_bridge_payload(
         "originalFilename": original_filename,
         "fileSizeBytes": file_size_bytes,
         "contentType": content_type,
-        "publicUrl": public_url_or_none(storage_path),
+        "publicUrl": public_url,
     }
+    body["bridgeSignature"] = sign_bridge_file_payload(
+        key_prefix=key_prefix,
+        storage_path=storage_path,
+        original_filename=original_filename,
+        file_size_bytes=file_size_bytes,
+        content_type=content_type,
+        public_url=public_url,
+    )
+    return body
 
 
 def success_bridge_payload(
