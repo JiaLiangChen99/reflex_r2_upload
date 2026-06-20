@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
 
+from reflex_r2_upload.config import require_bridge_signature
+from reflex_r2_upload.auth import verify_bridge_file_payload
 from reflex_r2_upload.payload import BRIDGE_PAYLOAD_VERSION, UploadErrorCode
 
 __all__ = [
@@ -36,6 +38,7 @@ class UploadFilePayload(TypedDict):
     fileSizeBytes: int
     contentType: str
     publicUrl: NotRequired[str | None]
+    bridgeSignature: NotRequired[str]
 
 
 class UploadErrorPayload(TypedDict):
@@ -189,6 +192,14 @@ def parse_upload_payload(payload_json: UploadPayloadJson) -> UploadResult:
             "未包含上传文件",
             code=UploadErrorCode.INVALID_PAYLOAD,
         )
+
+    if require_bridge_signature():
+        for item in items:
+            if not verify_bridge_file_payload(item):
+                raise UploadPayloadError(
+                    "回调签名无效",
+                    code=UploadErrorCode.INVALID_SIGNATURE,
+                )
 
     key_prefix = top_prefix or files[0].key_prefix
     return UploadResult(version=version, key_prefix=key_prefix, files=files)

@@ -6,6 +6,8 @@ import hashlib
 
 import reflex as rx
 
+from reflex_r2_upload.auth import issue_upload_token, upload_auth_enabled
+
 UPLOAD_RUNTIME_SCRIPT = r"""
 (() => {
   if (window.__reflexR2Upload) return;
@@ -18,6 +20,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
     UPLOAD_FAILED: "UPLOAD_FAILED",
     STORAGE_PUT_FAILED: "STORAGE_PUT_FAILED",
     CORS_BLOCKED: "CORS_BLOCKED",
+    UNAUTHORIZED: "UNAUTHORIZED",
   };
 
   function bridgeError(message, code) {
@@ -29,6 +32,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
   function classifyUploadError(message) {
     if (/R2 未配置|缺少：/i.test(message)) return ERROR_CODE.R2_NOT_CONFIGURED;
     if (/读取上传配置失败/i.test(message)) return ERROR_CODE.CONFIG_FETCH_FAILED;
+    if (/未授权/i.test(message)) return ERROR_CODE.UNAUTHORIZED;
     if (/CORS|failed to fetch/i.test(message)) return ERROR_CODE.CORS_BLOCKED;
     if (/存储 PUT 失败/i.test(message)) return ERROR_CODE.STORAGE_PUT_FAILED;
     return ERROR_CODE.UPLOAD_FAILED;
@@ -48,6 +52,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
         fileSizeBytes: item.fileSizeBytes,
         contentType: item.contentType,
         publicUrl: item.publicUrl ?? null,
+        bridgeSignature: item.bridgeSignature,
       };
     }
     return {
@@ -64,6 +69,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
         fileSizeBytes: item.fileSizeBytes,
         contentType: item.contentType,
         publicUrl: item.publicUrl ?? null,
+        bridgeSignature: item.bridgeSignature,
       })),
     };
   }
@@ -95,7 +101,14 @@ UPLOAD_RUNTIME_SCRIPT = r"""
 
   async function internalFetch(path, options = {}) {
     const base = await resolveBackendBase();
-    return fetch(`${base}${path}`, options);
+    return fetch(`${base}${path}`, {
+      credentials: "same-origin",
+      ...options,
+    });
+  }
+
+  function uploadTokenForZone(zone) {
+    return zone.dataset.uploadToken || "";
   }
 
   async function readError(res) {
@@ -137,7 +150,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
     return res.json();
   }
 
-  async function presign(keyPrefix, filename, contentType, allowedExtensions) {
+  async function presign(zone, keyPrefix, filename, contentType, fileSizeBytes) {
     const res = await internalFetch(`${routePrefix()}/presign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -145,7 +158,8 @@ UPLOAD_RUNTIME_SCRIPT = r"""
         keyPrefix,
         filename,
         contentType,
-        allowedExtensions,
+        fileSizeBytes,
+        uploadToken: uploadTokenForZone(zone),
       }),
     });
     if (!res.ok) throw new Error(await readError(res));
@@ -161,11 +175,15 @@ UPLOAD_RUNTIME_SCRIPT = r"""
     if (!res.ok) throw new Error(`存储 PUT 失败 (${res.status})`);
   }
 
-  async function complete(keyPrefix, payload) {
+  async function complete(zone, keyPrefix, payload) {
     const res = await internalFetch(`${routePrefix()}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyPrefix, ...payload }),
+      body: JSON.stringify({
+        keyPrefix,
+        uploadToken: uploadTokenForZone(zone),
+        ...payload,
+      }),
     });
     if (!res.ok) throw new Error(await readError(res));
     return res.json();
@@ -174,21 +192,20 @@ UPLOAD_RUNTIME_SCRIPT = r"""
   async function uploadOne(zone, file) {
     const keyPrefix = zone.dataset.keyPrefix;
     const contentType = zone.dataset.contentType || "application/octet-stream";
-    const allowed = zone.dataset.allowedExtensions || "";
-    const allowedList = allowed ? allowed.split(",").filter(Boolean) : null;
 
     const presignData = await presign(
+      zone,
       keyPrefix,
       file.name,
       contentType,
-      allowedList
+      file.size
     );
     await putToStorage(
       presignData.uploadUrl,
       file,
       presignData.contentType || contentType
     );
-    return complete(keyPrefix, {
+    return complete(zone, keyPrefix, {
       storagePath: presignData.storagePath,
       originalFilename: file.name,
       fileSizeBytes: file.size,
@@ -203,12 +220,7 @@ UPLOAD_RUNTIME_SCRIPT = r"""
     try {
       const cfg = await fetchConfig();
       if (!cfg.ready) {
-        const missing = (cfg.missingEnv || []).join(", ");
-        throw new Error(
-          missing
-            ? `R2 未配置，缺少：${missing}`
-            : "R2 未配置，请设置 .env 中的 R2_* 环境变量"
-        );
+        throw new Error("R2 未配置，请设置 .env 中的 R2_* 环境变量");
       }
     } catch (error) {
       const msg = error.message || "读取上传配置失败";
@@ -288,6 +300,26 @@ def _zone_id(key_prefix: str) -> str:
     return f"r2-zone-{digest}"
 
 
+def _embedded_upload_token(
+    key_prefix: str | rx.Var,
+    *,
+    allowed_extensions: list[str] | None = None,
+    content_type: str = "application/octet-stream",
+) -> str:
+    if not upload_auth_enabled():
+        return ""
+    if not isinstance(key_prefix, str):
+        return ""
+    try:
+        return issue_upload_token(
+            key_prefix,
+            allowed_extensions=allowed_extensions,
+            content_type=content_type,
+        )
+    except (ValueError, RuntimeError):
+        return ""
+
+
 def _resolve_accept(
     accept: str,
     allowed_extensions: list[str] | None,
@@ -333,6 +365,11 @@ def _upload_zone_root(
     file_input_id = f"{zone_id}-file"
     extensions = ",".join(allowed_extensions or [])
     accept_value = _resolve_accept(accept, allowed_extensions)
+    upload_token = _embedded_upload_token(
+        key_prefix,
+        allowed_extensions=allowed_extensions,
+        content_type=content_type,
+    )
 
     file_input = rx.el.input(
         id=file_input_id,
@@ -382,6 +419,7 @@ def _upload_zone_root(
         data_bridge_id=bridge_id,
         data_content_type=content_type,
         data_allowed_extensions=extensions,
+        data_upload_token=upload_token,
         data_no_drag="1" if no_drag else "0",
         class_name=class_name,
         **props,

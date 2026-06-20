@@ -25,22 +25,38 @@ else:
     self.storage_path = file.storage_path
 ```
 
-## Temporary read URL (server-side)
+## Temporary read URL (recommended: server helper)
 
 ```python
 # Production: authorize before issuing
 url = r2.signed_read_url(file.storage_path, expires_in=300)
 ```
 
-## Reserved route
+`expires_in` is clamped between **60 seconds** and `REFLEX_R2_GET_EXPIRES` (default 3600).
 
-`POST /_reflex_r2_upload/signed-read` with `keyPrefix`, `storagePath`, optional `expiresIn`.
+`signed_read_url()` does not use the HTTP route and is not gated by upload tokens — **you must authorize before calling it**.
 
-**Always authenticate** before issuing read URLs in production.
+## Reserved HTTP route (requires upload token)
+
+`POST /_reflex_r2_upload/signed-read`
+
+```json
+{
+  "keyPrefix": "demo/uploads",
+  "storagePath": "demo/uploads/model.glb",
+  "uploadToken": "...",
+  "expiresIn": 3600
+}
+```
+
+Same auth as presign: valid **upload token** plus optional **presign_guard**. `expiresIn` is clamped to `[60, REFLEX_R2_GET_EXPIRES]`.
+
+In production, prefer `signed_read_url()` inside Reflex events after your own read authorization.
 
 ## Related
 
-[configuration.md](configuration.md) — `R2_PUBLIC_BASE_URL`, `REFLEX_R2_GET_EXPIRES`
+[configuration.md](configuration.md) — `R2_PUBLIC_BASE_URL`, `REFLEX_R2_GET_EXPIRES`  
+[security.md](security.md) — auth model
 
 ---
 

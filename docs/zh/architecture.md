@@ -2,7 +2,7 @@
 
 **语言:** [中文](../README.md) · [English](../en/architecture.md)
 
-| [文档首页](../README.md) | [配置](configuration.md) | [Bridge](bridge-payload.md) | [私有桶](private-bucket.md) | **架构** |
+| [文档首页](../README.md) | [配置](configuration.md) | [安全](security.md) | [Bridge](bridge-payload.md) | **架构** |
 
 > 面向接入业务或二次开发的读者。含 Mermaid / ASCII 图，可用 [mermaid.live](https://mermaid.live) 渲染插图。
 
@@ -30,11 +30,16 @@
 | 依赖尽量轻 | API 层用 Starlette（Reflex 自带），不引入 FastAPI |
 | 可嵌入任意 Reflex 应用 | `wrap_app(app)` 统一挂载，无需手写 `api_transformer` |
 
-**当前 Demo 级限制**（生产接入前需自行补强）：
+**内置安全**（默认开启，详见 [安全](security.md)）：
 
-- 上传 API 无用户鉴权；
-- `complete` 接口不校验 R2 上对象是否真实存在；
-- `upload_zone` 的 `on_error` 参数已声明但未实现。
+- upload token 绑定 `keyPrefix`、扩展名、Content-Type；
+- `/complete` 返回 `bridgeSignature`，`parse_upload_payload()` 默认验签；
+- `complete` 调用 `head_object` 校验对象存在与大小；
+- 单文件大小上限、Content-Type 策略、按 IP 限流。
+
+**仍须业务层负责**：登录态、`presign_guard` 按用户绑定 prefix、读权限校验。
+
+**已知限制**：`upload_zone` 的 `on_error` 参数已声明但未实现；开放 Demo 可共享 `key_prefix`。
 
 ---
 
@@ -95,7 +100,6 @@ graph TB
         Bridge["hidden input bridge"]
         API["/_reflex_r2_upload/*"]
         R2["Cloudflare R2"]
-        Local["（已移除 local 落盘）"]
     end
 
     Demo --> Wrap
@@ -108,7 +112,6 @@ graph TB
     Bridge -->|on_change| State
     API --> Storage
     Storage --> R2
-    Storage --> Local
 ```
 
 ### 3.3 文件职责一览
@@ -119,8 +122,11 @@ graph TB
 | `wrap.py` | 注册 `app_wraps`、链式合并 `api_transformer` |
 | `provider.py` | 向每个页面注入一次 JS 运行时，设置 `data-backend-base`、`data-route-prefix` 等全局属性 |
 | `upload_zone.py` | 上传区域 DOM 结构 + 完整浏览器端上传脚本 |
-| `routes.py` | Starlette 保留路由：`/_reflex_r2_upload/{config,presign,complete}` |
-| `storage.py` | R2 boto3 客户端、presigned URL、本地落盘、`public_url` |
+| `routes.py` | Starlette 保留路由：`config` / `presign` / `complete` / `signed-read` |
+| `auth.py` | upload token、bridge 签名、presign_guard |
+| `limits.py` / `rate_limit.py` | 大小上限、GET TTL clamp、按 IP 限流 |
+| `content_types.py` | Content-Type blocklist 与扩展名匹配 |
+| `storage.py` | R2 boto3 客户端、presigned URL、`head_object` |
 | `keys.py` | `key_prefix` 规范化、文件名消毒、扩展名校验、重名避让 |
 | `config.py` | 从环境变量读取后端模式、保留路由前缀、过期时间等 |
 | `http.py` | `read_json`、`ok`、`fail`、`require_fields` 等薄封装 |
@@ -212,7 +218,8 @@ Reflex 允许通过 `api_transformer` 将额外的 ASGI 应用挂到后端。本
 | `data-key-prefix` | 对象存储路径前缀，如 `demo/uploads` |
 | `data-bridge-id` | 隐藏 input 的 id，JS 写入回调 JSON |
 | `data-content-type` | 默认 Content-Type |
-| `data-allowed-extensions` | 逗号分隔的扩展名白名单 |
+| `data-allowed-extensions` | 逗号分隔的扩展名白名单（写入 upload token） |
+| `data-upload-token` | 服务端签发的 HMAC upload token |
 
 `zone_id` 由 `key_prefix` 的 SHA1 前 10 位生成，同一前缀的上传区共享逻辑 id，不同前缀互不干扰。
 
@@ -244,7 +251,8 @@ Reflex 的自定义组件若要在浏览器端执行逻辑并回传数据到 Pyt
   "originalFilename": "model.glb",
   "fileSizeBytes": 1048576,
   "contentType": "model/gltf-binary",
-  "publicUrl": "https://cdn.example.com/demo/uploads/model.glb"
+  "publicUrl": "https://cdn.example.com/demo/uploads/model.glb",
+  "bridgeSignature": "..."
 }
 ```
 
@@ -296,11 +304,11 @@ sequenceDiagram
     JS->>API: GET /config
     API-->>JS: { ready: true }
 
-    JS->>API: POST /presign
+    JS->>API: POST /presign (uploadToken, fileSizeBytes)
     API-->>JS: { uploadUrl, storagePath }
-    JS->>R2: PUT uploadUrl (文件二进制)
-    JS->>API: POST /complete
-    API-->>JS: { storagePath, publicUrl, ... }
+    JS->>R2: PUT uploadUrl (Content-Length 绑定)
+    JS->>API: POST /complete (uploadToken)
+    API-->>JS: { storagePath, bridgeSignature, ... }
 
     JS->>Bridge: 写入 JSON + input 事件
     Bridge->>State: on_uploaded(payload_json)
@@ -317,14 +325,18 @@ sequenceDiagram
   "keyPrefix": "demo/uploads",
   "filename": "model.glb",
   "contentType": "model/gltf-binary",
-  "allowedExtensions": [".glb"]
+  "fileSizeBytes": 1048576,
+  "uploadToken": "..."
 }
 ```
 
-服务端逻辑（`routes.py` → `keys.py` → `storage.py`）：
+扩展名白名单来自 **upload token**（`upload_zone` 渲染时签发），**presign 忽略客户端 `allowedExtensions`**。
 
-1. `allocate_storage_path`：规范化前缀、消毒文件名、校验扩展名、若 key 已存在则追加 `_2`、`_3`…
-2. `create_presigned_put_url`：boto3 生成 PUT presigned URL（默认 600 秒有效）
+服务端逻辑（`routes.py` → `auth.py` → `keys.py` → `storage.py`）：
+
+1. 校验 upload token / presign_guard
+2. `allocate_storage_path`：规范化前缀、消毒文件名、校验扩展名、若 key 已存在则追加 `_2`、`_3`…
+3. `create_presigned_put_url`：boto3 生成 PUT presigned URL，绑定 `ContentLength`（默认 600 秒有效）
 
 响应：
 
@@ -351,15 +363,21 @@ R2 桶必须配置 CORS，允许本站 origin 的 `PUT` 请求，否则浏览器
   "storagePath": "demo/uploads/model.glb",
   "originalFilename": "model.glb",
   "fileSizeBytes": 1048576,
-  "contentType": "model/gltf-binary"
+  "contentType": "model/gltf-binary",
+  "uploadToken": "..."
 }
 ```
 
-服务端 `validate_storage_path` 确保 `storagePath` 以 `keyPrefix/` 开头，然后返回带 `publicUrl` 的结果。**当前不调用 `head_object` 验证文件是否真实上传。**
+服务端流程：
+
+1. 校验 upload token / presign_guard
+2. `validate_storage_path` 确保路径合法
+3. `head_object` 校验对象存在，`fileSizeBytes` 与 R2 `ContentLength` 一致
+4. 返回带 `publicUrl` 与 **`bridgeSignature`** 的结果（见 [Bridge Payload](bridge-payload.md)）
 
 ### 6.3 配置检查与测试
 
-`GET /config` 返回 `ready` 与 `missingEnv`，供前端在上传前提示缺少的 R2 变量。
+`GET /config` 默认仅返回 `{ "ready": bool }`。设置 `REFLEX_R2_VERBOSE_CONFIG=1` 时额外返回 `missingEnv`、`publicBaseUrl`、`routePrefix`。
 
 本地开发请配置 `.env` 后运行：
 
@@ -405,7 +423,7 @@ region:   auto
 normalize_prefix()  → 去首尾斜杠、拒绝 ".."
 safe_filename()     → 只保留 basename，替换非法字符
 is_allowed_extension() → 校验后缀白名单
-unique_storage_key()   → HEAD/本地检查，冲突则 model_2.glb
+unique_storage_key()   → HEAD 检查，冲突则 model_2.glb
         │
         ▼
 最终 key: "demo/uploads/passwd"  （而非越权路径）
@@ -421,11 +439,12 @@ unique_storage_key()   → HEAD/本地检查，冲突则 model_2.glb
 
 | 方法 | 路径 | 作用 |
 |------|------|------|
-| GET | `/_reflex_r2_upload/config` | 返回 `ready`、`missingEnv`、`publicBaseUrl`、`routePrefix` |
-| POST | `/_reflex_r2_upload/presign` | 签发 presigned PUT URL |
-| POST | `/_reflex_r2_upload/complete` | 校验路径前缀，返回最终元数据 |
+| GET | `/_reflex_r2_upload/config` | 默认 `{ "ready" }`；verbose 模式含诊断字段 |
+| POST | `/_reflex_r2_upload/presign` | 需 upload token；签发 presigned PUT URL |
+| POST | `/_reflex_r2_upload/complete` | 需 upload token；head_object 校验后返回 bridge JSON |
+| POST | `/_reflex_r2_upload/signed-read` | 需 upload token；签发私有读 URL |
 
-错误响应统一为 `{ "detail": "错误信息" }`，HTTP 400（或 500）。
+所有 POST 路由按 IP 限流（可配置）。鉴权失败 401，限流 429，错误体 `{ "detail": "..." }`。
 
 > **注意**：这些路由供上传组件内部调用。请勿在 `api_transformer` 中注册冲突路径；业务 API 建议使用 `/api/...` 等独立前缀。
 
@@ -433,15 +452,20 @@ unique_storage_key()   → HEAD/本地检查，冲突则 model_2.glb
 
 ## 9. 配置项完整说明
 
+完整环境变量表见 [配置](configuration.md)。核心项：
+
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `R2_ACCOUNT_ID` | — | **必填** Cloudflare 账号 ID |
-| `R2_ACCESS_KEY_ID` | — | **必填** R2 API 令牌 Access Key |
-| `R2_SECRET_ACCESS_KEY` | — | **必填** R2 API 令牌 Secret |
-| `R2_BUCKET_NAME` | — | **必填** 桶名 |
-| `R2_PUBLIC_BASE_URL` | — | 自定义域名或 R2 公开访问域名 |
-| `REFLEX_R2_ROUTE_PREFIX` | `/_reflex_r2_upload` | 保留路由前缀（勿与业务 `/api` 混用） |
-| `REFLEX_R2_PRESIGN_EXPIRES` | `600` | presigned URL 有效期（秒），最小 60 |
+| `R2_*` | — | R2 凭证（必填） |
+| `REFLEX_R2_ROUTE_PREFIX` | `/_reflex_r2_upload` | 保留路由前缀 |
+| `REFLEX_R2_PRESIGN_EXPIRES` | `600` | 上传 URL TTL（秒） |
+| `REFLEX_R2_GET_EXPIRES` | `3600` | 私有读 URL 最大 TTL |
+| `REFLEX_R2_UPLOAD_SECRET` | 自动派生 | token / bridge 签名密钥 |
+| `REFLEX_R2_MAX_UPLOAD_BYTES` | `104857600` | 单文件上限 |
+| `REFLEX_R2_RATE_LIMIT_REQUESTS` | `60` | 限流阈值；`0` 关闭 |
+| `REFLEX_R2_REQUIRE_UPLOAD_TOKEN` | `1` | 是否强制 upload token |
+| `REFLEX_R2_REQUIRE_BRIDGE_SIGNATURE` | `1` | 是否验 bridge 签名 |
+| `REFLEX_R2_VERBOSE_CONFIG` | `0` | `/config` 是否返回诊断字段 |
 
 ---
 
@@ -507,17 +531,28 @@ app = rx.App(
 
 ---
 
-## 12. 生产环境加固建议
+## 12. 生产环境 checklist
 
-以下为当前实现的已知缺口及推荐补强方向：
+### 库已内置
 
-| 风险 | 现状 | 建议 |
-|------|------|------|
-| 未授权上传 | 任何人可调用 presign | 在 presign 前校验 Reflex 会话 / JWT，并将 `key_prefix` 绑定到用户 ID |
-| 伪造 complete | 不验证 R2 对象存在 | complete 时 `head_object`，校验 Content-Length |
-| 密钥泄露 | `.env` 含 R2 凭证 | 密钥仅存服务端；`.env` 加入 `.gitignore` |
-| CORS 错误 | R2 桶未配 CORS | 在 Cloudflare 控制台为桶添加 PUT 允许的 Origin |
-| 重名竞态 | presign 与 PUT 之间可能被抢占 | 生产可用 UUID 中间段，或在 complete 时做最终一致性检查 |
+| 机制 | 说明 |
+|------|------|
+| upload token | 绑定 prefix / 扩展名 / Content-Type |
+| bridge 签名 | 防伪造 `on_success` 回调 |
+| complete 校验 | `head_object` + 大小一致 |
+| 大小 / 类型 / 限流 | 见 [安全](security.md) |
+
+### 业务层仍须负责
+
+| 项 | 建议 |
+|----|------|
+| 用户隔离 | `presign_guard=r2.make_user_key_prefix_guard(get_user_id)` + `user_key_prefix()` |
+| 读权限 | `signed_read_url()` 前校验谁可读该对象 |
+| 密钥 | R2 凭证与 `REFLEX_R2_UPLOAD_SECRET` 仅存服务端 |
+| CORS | R2 桶允许站点 Origin 的 `PUT` |
+| 重名竞态 | 可用 UUID 中间段，或依赖 complete 时的 head 校验 |
+
+详见 [安全](security.md)。
 
 ---
 
@@ -562,8 +597,10 @@ app = rx.App(
 |------|------|
 | presigned URL | 带签名、限时有效的 URL，允许持有者执行特定 S3/R2 操作（此处为 PUT） |
 | key_prefix | 对象存储中的逻辑目录前缀，如 `users/42/avatar` |
-| storage_path | 对象在桶或本地目录中的完整相对路径 |
+| storage_path | 对象在桶中的完整相对路径 |
 | bridge | 隐藏 input 元素，用于 JS 向 Reflex State 传递字符串 |
+| bridgeSignature | 服务端 HMAC 签名，防伪造上传成功回调 |
+| upload token | 绑定 prefix / 扩展名 / Content-Type 的 HMAC 令牌 |
 | app_wraps | Reflex 提供的全局页面包裹机制 |
 | api_transformer | Reflex 提供的后端 ASGI 应用挂载钩子 |
 | 保留路由 | 下划线前缀的后端路径（如 `/_reflex_r2_upload`），框架内部使用，勿覆盖 |

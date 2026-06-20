@@ -9,6 +9,7 @@ import httpx
 import pytest
 from dotenv import load_dotenv
 
+from reflex_r2_upload.auth import issue_upload_token
 from reflex_r2_upload.config import missing_r2_env
 from reflex_r2_upload.routes import create_upload_api
 from reflex_r2_upload.storage import object_exists
@@ -38,7 +39,8 @@ def test_config_ready(api):
     assert response.status_code == 200
     data = response.json()
     assert data["ready"] is True
-    assert not data.get("missingEnv")
+    if "missingEnv" in data:
+        assert not data.get("missingEnv")
 
 
 @_requires_r2
@@ -46,6 +48,7 @@ def test_presign_put_complete_flow(api):
     key_prefix = f"test/reflex_r2/{uuid.uuid4().hex}"
     filename = "probe.txt"
     body = b"reflex-r2-upload integration test"
+    upload_token = issue_upload_token(key_prefix)
 
     with httpx.Client(
         transport=httpx.ASGITransport(app=api),
@@ -58,6 +61,8 @@ def test_presign_put_complete_flow(api):
                 "keyPrefix": key_prefix,
                 "filename": filename,
                 "contentType": "text/plain",
+                "fileSizeBytes": len(body),
+                "uploadToken": upload_token,
             },
         )
         assert presign.status_code == 200, presign.text
@@ -80,6 +85,7 @@ def test_presign_put_complete_flow(api):
                 "originalFilename": filename,
                 "fileSizeBytes": len(body),
                 "contentType": "text/plain",
+                "uploadToken": upload_token,
             },
         )
         assert complete.status_code == 200, complete.text
@@ -99,7 +105,11 @@ def test_presign_put_complete_flow(api):
     ) as client:
         signed = client.post(
             "/_reflex_r2_upload/signed-read",
-            json={"keyPrefix": key_prefix, "storagePath": storage_path},
+            json={
+                "keyPrefix": key_prefix,
+                "storagePath": storage_path,
+                "uploadToken": upload_token,
+            },
         )
         assert signed.status_code == 200, signed.text
         assert signed.json()["signedUrl"].startswith("http")

@@ -1,11 +1,13 @@
 """Tests for R2Config vs environment variables."""
 
 import reflex_r2_upload.config as config
-from reflex_r2_upload.config import R2Config, configure_r2
+from reflex_r2_upload.config import R2Config, configure_allowed_key_prefixes, configure_r2, configure_upload_auth
 
 
 def setup_function():
     configure_r2(None)
+    configure_upload_auth(require_upload_token=None, require_bridge_signature=None)
+    configure_allowed_key_prefixes(None)
 
 
 def test_r2_config_overrides_env(monkeypatch):
